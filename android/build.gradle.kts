@@ -25,7 +25,22 @@ subprojects {
         project.evaluationDependsOn(":app")
     }
 
-    // 3. Apply namespace safely (NO afterEvaluate)
+    // 3. FORCE SDK VERSION & Namespace (Updated to 36)
+    afterEvaluate {
+        if (project.hasProperty("android")) {
+            val android = project.extensions.getByName("android") as BaseExtension
+            
+            // UPDATE: Pilitin ang lahat ng plugins (camera, image_picker, etc.) na gumamit ng SDK 36
+            android.compileSdkVersion(36)
+
+            // Pag-set ng namespace kung wala pa
+            if (android.namespace == null) {
+                android.namespace = "com.example.honey_purity_app.${project.name}"
+            }
+        }
+    }
+
+    // 4. Fallback Namespace safely for older plugins
     plugins.withId("com.android.application") {
         extensions.configure<BaseExtension>("android") {
             if (namespace == null) {

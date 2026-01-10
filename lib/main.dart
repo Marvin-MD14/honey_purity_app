@@ -7,14 +7,20 @@ import 'package:awesome_dialog/awesome_dialog.dart';
 import 'package:tflite_v2/tflite_v2.dart';
 
 void main() {
-  runApp(const MaterialApp(
+  runApp(MaterialApp(
     debugShowCheckedModeBanner: false,
-    home: LoginPage(),
+    theme: ThemeData(
+      fontFamily: 'TimesNewRoman',
+      primarySwatch: Colors.amber,
+      scaffoldBackgroundColor: Colors.amber[50],
+    ),
+    home: const LoginPage(),
   ));
 }
 
 const String apiUrl = "https://honey-classifier.islanddigitalguide.com/api.php";
 
+// ================= LOGIN PAGE =================
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
   @override
@@ -43,7 +49,11 @@ class _LoginPageState extends State<LoginPage> {
           Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const AdminDashboard()));
         } else {
           Navigator.pushReplacement(context, MaterialPageRoute(
-              builder: (context) => UserDashboard(userId: userData['id'].toString(), name: userData['fullname'])
+              builder: (context) => UserDashboard(
+                userId: userData['id'].toString(), 
+                name: userData['fullname'],
+                profilePic: userData['profile_pic'] ?? ""
+              )
           ));
         }
       } else {
@@ -69,34 +79,56 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.amber[50],
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(30),
-          child: Column(children: [
-            const Icon(Icons.bakery_dining, size: 100, color: Colors.amber),
-            const Text("Honey Purity System", style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 40),
-            TextField(controller: _user, decoration: const InputDecoration(labelText: "Username", border: OutlineInputBorder())),
-            const SizedBox(height: 15),
-            TextField(controller: _pass, obscureText: true, decoration: const InputDecoration(labelText: "Password", border: OutlineInputBorder())),
-            const SizedBox(height: 25),
-            ElevatedButton(
-              onPressed: _login,
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, minimumSize: const Size(double.infinity, 50)),
-              child: const Text("LOGIN", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.amber.shade300, Colors.amber.shade50],
+          ),
+        ),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(30),
+            child: Card(
+              elevation: 8,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              child: Padding(
+                padding: const EdgeInsets.all(25),
+                child: Column(children: [
+                  Image.asset(
+                    'assets/images/logo.png',
+                    height: 100,
+                    fit: BoxFit.contain,
+                    // DITO ANG FIX: Pinalitan ang Icons.honey_pod ng Icons.bakery_dining
+                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.bakery_dining, size: 100, color: Colors.amber),
+                  ),
+                  const Text("Honey Classifier", style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 30),
+                  TextField(controller: _user, decoration: InputDecoration(labelText: "Username", prefixIcon: const Icon(Icons.person), border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)))),
+                  const SizedBox(height: 15),
+                  TextField(controller: _pass, obscureText: true, decoration: InputDecoration(labelText: "Password", prefixIcon: const Icon(Icons.lock), border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)))),
+                  const SizedBox(height: 25),
+                  ElevatedButton(
+                    onPressed: _login,
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+                    child: const Text("LOGIN", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                  ),
+                  TextButton(
+                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const RegisterPage())),
+                      child: const Text("Don't have an account? Create one")
+                  )
+                ]),
+              ),
             ),
-            TextButton(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const RegisterPage())),
-                child: const Text("Create an Account")
-            )
-          ]),
+          ),
         ),
       ),
     );
   }
-}
+} // <--- DITO NAGSASARA ANG LOGIN PAGE STATE
 
+// ================= REGISTER PAGE =================
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
   @override
@@ -131,26 +163,92 @@ class _RegisterPageState extends State<RegisterPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Register"), backgroundColor: Colors.amber),
-      body: Padding(padding: const EdgeInsets.all(20), child: Column(children: [
-        TextField(controller: _name, decoration: const InputDecoration(labelText: "Full Name")),
-        TextField(controller: _user, decoration: const InputDecoration(labelText: "Username")),
-        TextField(controller: _pass, decoration: const InputDecoration(labelText: "Password"), obscureText: true),
-        const SizedBox(height: 20),
-        ElevatedButton(
-          onPressed: _register, 
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-          child: const Text("SUBMIT", style: TextStyle(color: Colors.black)),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.amber.shade300, Colors.amber.shade50],
+          ),
         ),
-      ])),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(30),
+            child: Card(
+              elevation: 8,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              child: Padding(
+                padding: const EdgeInsets.all(25),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset(
+                      'assets/images/logo.png',
+                      height: 80,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.person_add, size: 80, color: Colors.amber),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text("Register Account", style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 30),
+                    TextField(
+                      controller: _name, 
+                      decoration: InputDecoration(
+                        labelText: "Full Name", 
+                        prefixIcon: const Icon(Icons.badge), 
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15))
+                      )
+                    ),
+                    const SizedBox(height: 15),
+                    TextField(
+                      controller: _user, 
+                      decoration: InputDecoration(
+                        labelText: "Username", 
+                        prefixIcon: const Icon(Icons.person), 
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15))
+                      )
+                    ),
+                    const SizedBox(height: 15),
+                    TextField(
+                      controller: _pass, 
+                      obscureText: true, 
+                      decoration: InputDecoration(
+                        labelText: "Password", 
+                        prefixIcon: const Icon(Icons.lock), 
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15))
+                      )
+                    ),
+                    const SizedBox(height: 25),
+                    ElevatedButton(
+                      onPressed: _register, 
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.amber, 
+                        minimumSize: const Size(double.infinity, 50),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
+                      ),
+                      child: const Text("SUBMIT REGISTRATION", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text("Already have an account? Login")
+                    )
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
-}
+} // <--- DITO NAGSASARA ANG REGISTER PAGE STATE
 
+// ================= USER DASHBOARD =================
 class UserDashboard extends StatefulWidget {
   final String userId;
   final String name;
-  const UserDashboard({super.key, required this.userId, required this.name});
+  final String profilePic;
+  const UserDashboard({super.key, required this.userId, required this.name, this.profilePic = ""});
   @override
   State<UserDashboard> createState() => _UserDashboardState();
 }
@@ -170,15 +268,11 @@ class _UserDashboardState extends State<UserDashboard> {
 
   Future loadModel() async {
     try {
-      // IN-UPDATE: Gamit na ang bagong model filename v2
       await Tflite.loadModel(
         model: "assets/honey_model_v2.tflite",
         labels: "assets/labels.txt",
       );
-      print("New Model Loaded: honey_model_v2.tflite");
-    } catch (e) {
-      print("Failed to load model: $e");
-    }
+    } catch (e) { print(e); }
   }
 
   @override
@@ -195,22 +289,56 @@ class _UserDashboardState extends State<UserDashboard> {
     return "N/A";
   }
 
+  // UPDATED: TINANGGAL ANG IMAGE PICKER SA EDIT PROFILE
+  void _showEditProfile() {
+    final nameController = TextEditingController(text: _currentName);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Update Profile"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min, 
+          children: [
+            const CircleAvatar(
+              radius: 40,
+              backgroundColor: Colors.amber,
+              child: Icon(Icons.person, size: 50, color: Colors.white),
+            ),
+            const SizedBox(height: 15),
+            TextField(
+              controller: nameController, 
+              decoration: const InputDecoration(
+                labelText: "Full Name",
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          ElevatedButton(
+            onPressed: () {
+              setState(() { _currentName = nameController.text; });
+              Navigator.pop(context);
+            },
+            child: const Text("Update"),
+          )
+        ],
+      ),
+    );
+  }
+
   Future<void> _classifyHoney(File image) async {
     var output = await Tflite.runModelOnImage(
       path: image.path,
       numResults: 3, 
-      threshold: 0.05, // Threshold adjustment for better sensitivity
+      threshold: 0.05,
       imageMean: 127.5,
       imageStd: 127.5,
     );
 
-    print("----------------------------");
-    print("AI RAW OUTPUT: $output");
-    print("----------------------------");
-
     if (output != null && output.isNotEmpty) {
       String rawLabel = output[0]['label'];
-      // Alisin ang index numbers (e.g., "0 Amber" -> "Amber")
       String detectedLabel = rawLabel.replaceAll(RegExp(r'[0-9]'), '').trim();
       double detectedConfidence = output[0]['confidence'] * 100;
       String pfund = _getPfundValue(detectedLabel);
@@ -220,60 +348,73 @@ class _UserDashboardState extends State<UserDashboard> {
         _confidence = detectedConfidence;
       });
 
-      _saveScanResult(detectedLabel, detectedConfidence, pfund);
-    } else {
-      setState(() {
-        _result = "No Match Found";
-        _confidence = 0.0;
-      });
+      _showFeedbackDialog(detectedLabel, detectedConfidence, pfund, image);
     }
   }
 
-  Future<void> _saveScanResult(String honeyColor, double confidence, String pfund) async {
-    try {
-      final response = await http.post(Uri.parse("$apiUrl?action=save_scan"), body: {
-        "user_id": widget.userId,
-        "color_result": honeyColor,
-        "confidence": "${confidence.toStringAsFixed(1)}%",
-        "pfund_value": pfund,
-      });
-      print("Database sync response: ${response.body}");
-    } catch (e) { 
-      print("Error saving scan: $e"); 
-    }
-  }
+  void _showFeedbackDialog(String label, double conf, String pfund, File imageFile) {
+    String selectedRating = "5";
+    String selectedComment = "Legit! Accurate result.";
 
-  void _showEditProfile() {
-    final nameController = TextEditingController(text: _currentName);
-    final passController = TextEditingController();
-
-    showDialog(
+    AwesomeDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Update Profile"),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: nameController, decoration: const InputDecoration(labelText: "Full Name")),
-          TextField(controller: passController, decoration: const InputDecoration(labelText: "New Password"), obscureText: true),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-          ElevatedButton(
-            onPressed: () async {
-              final response = await http.post(Uri.parse("$apiUrl?action=update_profile"), body: {
-                "id": widget.userId, "fullname": nameController.text, "password": passController.text,
-              });
-              if (jsonDecode(response.body)['status'] == 'success') {
-                setState(() { _currentName = nameController.text; });
-                if (!mounted) return;
-                Navigator.pop(context);
-                AwesomeDialog(context: context, dialogType: DialogType.success, title: 'Updated!', desc: 'Profile saved successfully.').show();
-              }
-            },
-            child: const Text("Update"),
-          )
-        ],
+      dialogType: DialogType.success,
+      animType: AnimType.bottomSlide,
+      title: 'Scan Successful!',
+      body: StatefulBuilder(
+        builder: (context, setStateSB) {
+          return Column(
+            children: [
+              Text("Detected: $label", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              const Divider(),
+              const Text("Rate Accuracy (1-5 Stars):"),
+              DropdownButton<String>(
+                value: selectedRating,
+                isExpanded: true,
+                items: ["5", "4", "3", "2", "1"].map((s) => DropdownMenuItem(value: s, child: Text("$s Stars"))).toList(),
+                onChanged: (v) => setStateSB(() => selectedRating = v!),
+              ),
+              const SizedBox(height: 10),
+              const Text("Select Feedback:"),
+              DropdownButton<String>(
+                value: selectedComment,
+                isExpanded: true,
+                items: ["Legit! Accurate result.", "Matched expectations.", "Slightly different.", "Inaccurate.", "Helpful App!"]
+                  .map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                onChanged: (v) => setStateSB(() => selectedComment = v!),
+              ),
+            ],
+          );
+        },
       ),
-    );
+      btnOkText: "SUBMIT",
+      btnOkOnPress: () {
+        _saveScanWithFeedback(label, conf, pfund, selectedRating, selectedComment, imageFile);
+      },
+    ).show();
+  }
+
+  Future<void> _saveScanWithFeedback(String res, double conf, String pfund, String rate, String comm, File img) async {
+    try {
+      var request = http.MultipartRequest('POST', Uri.parse("$apiUrl?action=save_scan_feedback"));
+      request.fields['user_id'] = widget.userId;
+      request.fields['color_result'] = res;
+      request.fields['confidence'] = "${conf.toStringAsFixed(1)}%";
+      request.fields['pfund_value'] = pfund;
+      request.fields['rating'] = rate;
+      request.fields['comment'] = comm;
+      request.files.add(await http.MultipartFile.fromPath('image', img.path));
+      await request.send();
+
+      if (!mounted) return;
+      AwesomeDialog(
+        context: context,
+        dialogType: DialogType.success,
+        title: 'Thank You!',
+        desc: 'your ratings was sent successfully thanks for using application',
+        btnOkOnPress: () {},
+      ).show();
+    } catch (e) { print(e); }
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -300,22 +441,9 @@ class _UserDashboardState extends State<UserDashboard> {
             accountEmail: const Text("Honey Quality Analyst", style: TextStyle(color: Colors.black87)),
             currentAccountPicture: const CircleAvatar(backgroundColor: Colors.white, child: Icon(Icons.person, color: Colors.amber)),
           ),
-          ListTile(
-            leading: const Icon(Icons.edit),
-            title: const Text("Edit Profile"),
-            onTap: () {
-              Navigator.pop(context);
-              _showEditProfile();
-            },
-          ),
+          ListTile(leading: const Icon(Icons.edit), title: const Text("Edit Profile"), onTap: () { Navigator.pop(context); _showEditProfile(); }),
           const Divider(),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text("Logout"),
-            onTap: () {
-              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginPage()));
-            },
-          ),
+          ListTile(leading: const Icon(Icons.logout, color: Colors.red), title: const Text("Logout"), onTap: () { Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginPage())); }),
         ]),
       ),
       body: Padding(
@@ -324,16 +452,9 @@ class _UserDashboardState extends State<UserDashboard> {
           Expanded(
             child: Container(
               width: double.infinity,
-              decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(15),
-                  border: Border.all(color: Colors.amber, width: 2)
-              ),
+              decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.amber, width: 2)),
               child: _image == null
-                  ? const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.image_search, size: 80, color: Colors.grey),
-                Text("No Image Captured", style: TextStyle(color: Colors.grey))
-              ])
+                  ? const Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.image_search, size: 80, color: Colors.grey), Text("No Image Captured")])
                   : ClipRRect(borderRadius: BorderRadius.circular(13), child: Image.file(_image!, fit: BoxFit.cover)),
             ),
           ),
@@ -343,10 +464,7 @@ class _UserDashboardState extends State<UserDashboard> {
             child: Padding(
               padding: const EdgeInsets.all(15),
               child: Column(children: [
-                Text(
-                    _confidence > 0 ? "Result: $_result" : _result,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)
-                ),
+                Text(_confidence > 0 ? "Result: $_result" : _result, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                 if (_confidence > 0) ...[
                   Text("Confidence: ${_confidence.toStringAsFixed(1)}%", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
                   const Divider(),
@@ -366,7 +484,7 @@ class _UserDashboardState extends State<UserDashboard> {
     );
   }
 }
-
+// ================= ADMIN DASHBOARD =================
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
   @override
@@ -376,6 +494,10 @@ class AdminDashboard extends StatefulWidget {
 class _AdminDashboardState extends State<AdminDashboard> {
   List users = [];
   List scans = [];
+  List filteredScans = [];
+  TextEditingController searchController = TextEditingController();
+  int currentPage = 1;
+  int itemsPerPage = 5;
 
   Future<void> fetchAdminData() async {
     try {
@@ -384,8 +506,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
       setState(() {
         users = res['users'] ?? [];
         scans = res['scans'] ?? [];
+        filteredScans = scans;
       });
-    } catch (e) { print("Error fetching admin data: $e"); }
+    } catch (e) { print("Error: $e"); }
+  }
+
+  void filterScans(String query) {
+    setState(() {
+      currentPage = 1;
+      filteredScans = scans.where((s) {
+        final name = s['fullname'].toString().toLowerCase();
+        final result = s['color_result'].toString().toLowerCase();
+        return name.contains(query.toLowerCase()) || result.contains(query.toLowerCase());
+      }).toList();
+    });
   }
 
   @override
@@ -396,40 +530,106 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    int totalUsers = users.length;
+    int totalScans = scans.length;
+    
+    int amberCount = scans.where((s) => s['color_result'].toString().toLowerCase().contains('amber')).length;
+
+    int startIndex = (currentPage - 1) * itemsPerPage;
+    int endIndex = startIndex + itemsPerPage;
+    if (endIndex > filteredScans.length) endIndex = filteredScans.length;
+    List currentScans = filteredScans.isEmpty ? [] : filteredScans.sublist(startIndex, endIndex);
+
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
           title: const Text("Admin Monitoring"),
-          backgroundColor: Colors.brown,
-          bottom: const TabBar(tabs: [Tab(text: "Users"), Tab(text: "Scan History")]),
-          actions: [IconButton(onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginPage())), icon: const Icon(Icons.logout))],
+          backgroundColor: Colors.amber,
+          bottom: const TabBar(tabs: [Tab(icon: Icon(Icons.dashboard), text: "Analytics"), Tab(icon: Icon(Icons.history), text: "History")]),
+          actions: [IconButton(onPressed: fetchAdminData, icon: const Icon(Icons.refresh)), IconButton(onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginPage())), icon: const Icon(Icons.logout))],
         ),
         body: TabBarView(children: [
-          ListView.builder(
-              itemCount: users.length,
-              itemBuilder: (context, i) => ListTile(
-                leading: const Icon(Icons.person),
-                title: Text(users[i]['fullname']),
-                subtitle: Text("Username: ${users[i]['username']}"),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  onPressed: () async {
-                    final response = await http.post(Uri.parse("$apiUrl?action=delete_user"), body: {"id": users[i]['id'].toString()});
-                    if (jsonDecode(response.body)['status'] == 'success') { fetchAdminData(); }
-                  },
+          // TAB 1: ANALYTICS & USERS
+          SingleChildScrollView(
+            child: Column(children: [
+              Padding(
+                padding: const EdgeInsets.all(10),
+                child: Row(children: [
+                  Expanded(child: _buildStatCard("Total Users", totalUsers.toString(), Icons.people, Colors.blue)),
+                  Expanded(child: _buildStatCard("Total Scans", totalScans.toString(), Icons.analytics, Colors.orange)),
+                  Expanded(child: _buildStatCard("Amber Detect", amberCount.toString(), Icons.opacity, Colors.brown)),
+                ]),
+              ),
+              const Divider(),
+              const Padding(padding: EdgeInsets.all(8.0), child: Text("User List", style: TextStyle(fontWeight: FontWeight.bold))),
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: users.length,
+                itemBuilder: (context, i) => ListTile(
+                  leading: const CircleAvatar(child: Icon(Icons.person)),
+                  title: Text(users[i]['fullname']),
+                  subtitle: Text("ID: ${users[i]['id']}"),
                 ),
-              )
+              ),
+            ]),
           ),
-          ListView.builder(
-              itemCount: scans.length,
-              itemBuilder: (context, i) => ListTile(
-                leading: const Icon(Icons.history, color: Colors.amber),
-                title: Text(scans[i]['fullname'] ?? "Unknown User"),
-                subtitle: Text("Result: ${scans[i]['color_result']} (${scans[i]['confidence'] ?? '0%'})"),
-                trailing: Text(scans[i]['created_at']?.split(' ')[0] ?? "", style: const TextStyle(fontSize: 12)),
-              )
-          ),
+
+          // TAB 2: HISTORY WITH PAGINATION
+          Column(children: [
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: TextField(
+                controller: searchController,
+                onChanged: filterScans,
+                decoration: InputDecoration(hintText: "Search name or result...", prefixIcon: const Icon(Icons.search), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), filled: true, fillColor: Colors.white),
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: currentScans.length,
+                itemBuilder: (context, i) => Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  child: ListTile(
+                    leading: CircleAvatar(backgroundColor: Colors.amber[100], child: const Icon(Icons.bug_report, color: Colors.orange)),
+                    title: Text(currentScans[i]['fullname'] ?? "User"),
+                    subtitle: Text("Detected: ${currentScans[i]['color_result']} (${currentScans[i]['confidence']})"),
+                    trailing: Text("${currentScans[i]['rating']}★", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                ElevatedButton(
+                  onPressed: currentPage > 1 ? () => setState(() => currentPage--) : null,
+                  child: const Text("Prev"),
+                ),
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 15), child: Text("Page $currentPage")),
+                ElevatedButton(
+                  onPressed: endIndex < filteredScans.length ? () => setState(() => currentPage++) : null,
+                  child: const Text("Next"),
+                ),
+              ]),
+            )
+          ]),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 5),
+        child: Column(children: [
+          Icon(icon, color: color),
+          const SizedBox(height: 5),
+          Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(title, style: const TextStyle(fontSize: 10, color: Colors.grey), textAlign: TextAlign.center),
         ]),
       ),
     );

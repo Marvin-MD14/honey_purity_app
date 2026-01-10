@@ -5,9 +5,8 @@ plugins {
 }
 
 android {
-    // Your unique app namespace
     namespace = "com.example.honey_purity_app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36 
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -19,16 +18,26 @@ android {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
+    // PINASIMPLE NA SIGNING CONFIG
+    signingConfigs {
+        getByName("debug") {
+            // Gagamit ng default debug key para hindi mag-error sa property
+            enableV1Signing = true
+            enableV2Signing = true
+        }
+    }
+
     defaultConfig {
-        applicationId = "com.example.honey_purity_app"
-        // MinSdk 26 supports the hardware acceleration needed for TFLite
+        // Binago ang ID para i-reset ang certificate issue sa phone
+        applicationId = "com.honeypurity.scanner.app" 
+        
         minSdk = 26 
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 36 
+        
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
-    // Prevents the system from compressing the AI model, which causes runtime crashes
     @Suppress("UnstableApiUsage")
     androidResources {
         noCompress.add("tflite")
@@ -36,9 +45,11 @@ android {
     }
 
     buildTypes {
-        release {
+        getByName("debug") {
             signingConfig = signingConfigs.getByName("debug")
-            // Disable shrinking to ensure the TFLite native libraries aren't removed
+        }
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             isShrinkResources = false
         }
@@ -48,6 +59,3 @@ android {
 flutter {
     source = "../.."
 }
-
-// DO NOT add "subprojects" or "afterEvaluate" blocks here. 
-// They must remain only in the root android/build.gradle.kts file.

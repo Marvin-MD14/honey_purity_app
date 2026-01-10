@@ -1,4 +1,4 @@
-name: honey_purity_app
+name: honey_classifier
 description: "Honey Classification App for Thesis"
 publish_to: 'none'
 version: 1.0.0+1
@@ -15,7 +15,6 @@ dependencies:
   camera: ^0.11.3
   image: ^4.0.17
   awesome_dialog: ^3.1.0
-  # Gagamitin natin ang version na ito para sa tflite_v2
   tflite_v2: ^1.0.0
   permission_handler: ^12.0.1
 
@@ -23,10 +22,21 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^2.0.0
+  # Tool para sa automatic na pag-generate ng App Icon
+  flutter_launcher_icons: ^0.13.1
+
+# Configuration para sa App Icon gamit ang iyong logo.jpg
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/logo.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/images/logo.png"
 
 flutter:
   uses-material-design: true
 
   assets:
-   - assets/honey_model_v2.tflite 
-   - assets/labels.txt
+    - assets/honey_model_v2.tflite
+    - assets/labels.txt
+    - assets/images/logo.png
