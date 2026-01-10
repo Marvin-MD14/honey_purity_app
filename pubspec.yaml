@@ -1,0 +1,32 @@
+name: honey_purity_app
+description: "Honey Classification App for Thesis"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.10.4 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.1.0
+  image_picker: ^1.0.4
+  camera: ^0.11.3
+  image: ^4.0.17
+  awesome_dialog: ^3.1.0
+  # Gagamitin natin ang version na ito para sa tflite_v2
+  tflite_v2: ^1.0.0
+  permission_handler: ^12.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+   - assets/honey_model_v2.tflite 
+   - assets/labels.txt
