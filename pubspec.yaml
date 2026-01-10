@@ -22,10 +22,10 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^2.0.0
-  # Tool para sa automatic na pag-generate ng App Icon
+
   flutter_launcher_icons: ^0.13.1
 
-# Configuration para sa App Icon gamit ang iyong logo.jpg
+
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
