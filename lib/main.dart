@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:awesome_dialog/awesome_dialog.dart';
 import 'package:tflite_v2/tflite_v2.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart'; 
 
 void main() {
   runApp(MaterialApp(
@@ -21,7 +22,6 @@ void main() {
 
 const String apiUrl = "https://honey-classifier.islanddigitalguide.com/api.php";
 
-// ================= LOGIN PAGE =================
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
   @override
@@ -610,7 +610,15 @@ class _UserDashboardState extends State<UserDashboard> {
       _classifyHoney(_image!);
     }
   }
-
+String formatDateTime(String rawDate) {
+  if (rawDate == "N/A" || rawDate.isEmpty) return "N/A";
+  try {
+    DateTime dateTime = DateTime.parse(rawDate);
+    return DateFormat('MMMM dd, yyyy - hh:mm a').format(dateTime);
+  } catch (e) {
+    return rawDate;
+  }
+}
   // ================= PAGINATION & UI =================
 
   Widget _buildPaginationFooter() {
@@ -777,7 +785,7 @@ class _UserDashboardState extends State<UserDashboard> {
                                         : null,
                                   ),
                                   title: Text(currentScans[i]['color_result'] ?? "Unknown", style: const TextStyle(fontWeight: FontWeight.bold)),
-                                  subtitle: Text(currentScans[i]['created_at'] ?? 'N/A'),
+                                  subtitle: Text(formatDateTime(currentScans[i]['created_at'] ?? "")),
                                   trailing: const Icon(Icons.arrow_forward_ios, size: 14),
                                 ),
                               ),
@@ -815,7 +823,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
     super.initState();
     fetchAdminData();
   }
-
+String formatDateTime(String rawDate) {
+  if (rawDate == "N/A" || rawDate.isEmpty) return "N/A";
+  try {
+    
+    DateTime dateTime = DateTime.parse(rawDate);
+    return DateFormat('MMMM dd, yyyy - hh:mm a').format(dateTime);
+  } catch (e) {
+    return rawDate; 
+  }
+}
   // ================= DATA FETCHING & REFRESH =================
 
   Future<void> fetchAdminData() async {
@@ -984,7 +1001,7 @@ void _handleLogout() {
               ),
             const SizedBox(height: 15),
             
-            _detailRow("Date & Time:", scan['created_at'] ?? "N/A"),
+            _detailRow("Date & Time:", formatDateTime(scan['created_at'] ?? "N/A")),
             _detailRow("User:", scan['fullname'] ?? "N/A"),
             _detailRow("Result:", scan['color_result'] ?? "N/A"),
             _detailRow("Confidence:", scan['confidence'] ?? "0%"),
@@ -1153,7 +1170,7 @@ void _handleLogout() {
                               ? const Icon(Icons.history, color: Colors.orange) : null
                           ),
                           title: Text(currentScans[i]['fullname'] ?? "User"),
-                          subtitle: Text("${currentScans[i]['color_result']} - ${currentScans[i]['created_at']}"),
+                          subtitle: Text("${currentScans[i]['color_result']} - ${formatDateTime(currentScans[i]['created_at'])}"),
                           trailing: const Icon(Icons.arrow_forward_ios, size: 14),
                           onTap: () => _showScanDetails(currentScans[i]),
                         ),
