@@ -263,7 +263,6 @@ class _UserDashboardState extends State<UserDashboard> {
   double _confidence = 0.0;
   bool isLoading = false;
 
-  // History, Search & Pagination State
   List myScans = [];
   List filteredScans = [];
   TextEditingController searchController = TextEditingController();
