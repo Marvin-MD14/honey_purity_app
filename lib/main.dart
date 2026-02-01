@@ -729,7 +729,7 @@ String formatDateTime(String rawDate) {
                         ]),
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 20), 
                     Row(children: [
                       Expanded(
                           child: ElevatedButton.icon(
