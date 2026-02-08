@@ -256,6 +256,7 @@ class UserDashboard extends StatefulWidget {
 
 class _UserDashboardState extends State<UserDashboard> {
   File? _image;
+  List? _recognitions;
   File? _newProfilePic;
   String _result = "Ready to scan honey";
   String _currentName = "";
@@ -287,16 +288,17 @@ class _UserDashboardState extends State<UserDashboard> {
 
   // ================= CORE FUNCTIONS =================
 
-  Future loadModel() async {
-    try {
-      await Tflite.loadModel(
-        model: "assets/honey_model_v2.tflite",
-        labels: "assets/labels.txt",
-      );
-    } catch (e) {
-      debugPrint("Error loading model: ${e.toString()}");
-    }
-  }
+ // Sa loob ng iyong classification service o state class
+Future loadModel() async {
+  String? res = await Tflite.loadModel(
+    model: "assets/honey_model_v4.tflite",
+    labels: "assets/labels.txt",
+    numThreads: 1, // mas stable sa mobile
+    isAsset: true,
+    useGpuDelegate: false, // set to false muna para iwas crash sa ibang android
+  );
+  print("Model loaded: $res");
+}
 
   Future<void> fetchMyHistory() async {
     if (!mounted) return;
@@ -328,6 +330,17 @@ class _UserDashboardState extends State<UserDashboard> {
       }).toList();
       currentPage = 1;
     });
+  }
+  String getResultMessage() {
+    if (_recognitions == null || _recognitions!.isEmpty) {
+      return "Ready to Scan";
+    }
+    
+    if (_result.toLowerCase().contains("not")) {
+      return "Invalid Sample: This is not recognized as honey.";
+    } else {
+      return "Result: $_result (${_confidence.toStringAsFixed(0)}%)";
+    }
   }
 
   void _handleLogout() {
@@ -387,42 +400,75 @@ class _UserDashboardState extends State<UserDashboard> {
       if (mounted) setState(() => isLoading = false);
     }
   }
+Future<void> _saveScanWithFeedback(String res, double conf, String pfund, String rate, String comm, File img) async {
+  setState(() => isLoading = true);
+  
+  // OPTIONAL: Gawing readable ang label bago i-save
+  String formattedRes = res;
+  if (res == 'Extralightamber') formattedRes = 'Extra Light Amber';
+  if (res == 'LightAmber') formattedRes = 'Light Amber';
 
-  Future<void> _saveScanWithFeedback(String res, double conf, String pfund, String rate, String comm, File img) async {
-    setState(() => isLoading = true);
-    try {
-      var request = http.MultipartRequest('POST', Uri.parse("$apiUrl?action=save_scan_feedback"));
-      request.fields['user_id'] = widget.userId;
-      request.fields['color_result'] = res;
-      request.fields['confidence'] = "${conf.toStringAsFixed(1)}%";
-      request.fields['pfund_value'] = pfund;
-      request.fields['rating'] = rate;
-      request.fields['comment'] = comm;
-      request.files.add(await http.MultipartFile.fromPath('image', img.path));
+  try {
+    var request = http.MultipartRequest('POST', Uri.parse("$apiUrl?action=save_scan_feedback"));
+    
+    request.fields['user_id'] = widget.userId;
+    request.fields['color_result'] = formattedRes; // Ginamit ang formatted label
+    request.fields['confidence'] = "${conf.clamp(0.0, 100.0).toStringAsFixed(1)}%";
+    request.fields['pfund_value'] = pfund;
+    request.fields['rating'] = rate;
+    request.fields['comment'] = comm;
+    
+    // Pag-attach ng image
+    request.files.add(await http.MultipartFile.fromPath('image', img.path));
 
-      var response = await request.send();
-      if (response.statusCode == 200) {
-        fetchMyHistory(); 
-        if (!mounted) return;
-        AwesomeDialog(context: context, dialogType: DialogType.success, title: 'Analysis Saved!').show();
-      }
-    } catch (e) {
-      debugPrint("Error saving: $e");
-    } finally {
-      if (mounted) setState(() => isLoading = false);
+    var response = await request.send();
+    
+    if (response.statusCode == 200) {
+      // Kunin ang response body kung kailangan i-debug
+      // var responseData = await response.stream.bytesToString();
+      
+      await fetchMyHistory(); // Refresh history list
+      
+      if (!mounted) return;
+      
+      AwesomeDialog(
+        context: context, 
+        dialogType: DialogType.success, 
+        title: 'Analysis Saved!',
+        desc: 'Thank you for your feedback.',
+        btnOkOnPress: () {},
+      ).show();
+    } else {
+      throw Exception("Server Error: ${response.statusCode}");
     }
+  } catch (e) {
+    debugPrint("Error saving scan: $e");
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to save. Please check your internet.")),
+      );
+    }
+  } finally {
+    if (mounted) setState(() => isLoading = false);
   }
+}
 
   // ================= LOGIC & UI HELPERS =================
 
-  String _getPfundValue(String label) {
-    String lowerLabel = label.toLowerCase();
-    if (lowerLabel.contains("extralightamber")) return "34-50 mm";
-    if (lowerLabel.contains("lightamber")) return "50-85 mm";
-    if (lowerLabel.contains("amber")) return "85-114 mm";
-    return "N/A";
+String _getPfundValue(String result) {
+  switch (result) {
+    case 'Extralightamber': // Sumunod sa labels.txt mo
+      return '17mm - 34mm';
+    case 'LightAmber':      // Sumunod sa labels.txt mo
+      return '51mm - 85mm';
+    case 'Amber':
+      return '86mm - 114mm';
+    case 'Not Honey':
+      return 'N/A';
+    default:
+      return 'Unknown';
   }
-
+}
   void _showEditProfile() {
     final nameController = TextEditingController(text: _currentName);
     showDialog(
@@ -513,111 +559,292 @@ class _UserDashboardState extends State<UserDashboard> {
   }
 
   void _showFeedbackDialog(String label, double conf, String pfund, File imageFile) {
-    String selectedRating = "5";
-    String selectedComment = "Legit! Accurate result.";
-    AwesomeDialog(
-      context: context,
-      dialogType: DialogType.info,
-      title: 'Scan Result',
-      body: StatefulBuilder(
-        builder: (context, setStateSB) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Column(
-            children: [
-              Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.amber)),
-              Text("Confidence: ${conf.toStringAsFixed(1)}%"),
-              const SizedBox(height: 15),
-              const Text("Rate the accuracy:"),
-              DropdownButton<String>(
-                value: selectedRating,
-                isExpanded: true,
-                items: ["5", "4", "3", "2", "1"].map((s) => DropdownMenuItem(value: s, child: Text("$s Stars"))).toList(),
-                onChanged: (v) => setStateSB(() => selectedRating = v!),
+  // 1. Gawing readable ang label para sa UI (Display purposes only)
+  // Halimbawa: "Extralightamber" -> "Extra Light Amber"
+  String displayLabel = label;
+  if (label == 'Extralightamber') displayLabel = 'Extra Light Amber';
+  if (label == 'LightAmber') displayLabel = 'Light Amber';
+
+  // Check kung ang label ay "Not Honey"
+  bool isNotHoney = label.toLowerCase().contains("not");
+
+  String selectedRating = "5";
+  String selectedComment = isNotHoney 
+      ? "Correctly identified as invalid." 
+      : "Legit! Accurate result.";
+
+  AwesomeDialog(
+    context: context,
+    // Warning (Red) kung Not Honey, Info (Amber) kung legit honey
+    dialogType: isNotHoney ? DialogType.warning : DialogType.info,
+    animType: AnimType.scale,
+    headerAnimationLoop: false, // Para hindi nakakahilo ang loop ng icon
+    title: 'Scan Result',
+    body: StatefulBuilder(
+      builder: (context, setStateSB) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: Column(
+          children: [
+            Text(
+              displayLabel, // Ginamit ang readable version
+              style: TextStyle(
+                fontWeight: FontWeight.bold, 
+                fontSize: 24, 
+                color: isNotHoney ? Colors.red : Colors.amber.shade700
+              )
+            ),
+            Text(
+              "Confidence: ${conf.clamp(0.0, 100.0).toStringAsFixed(1)}%",
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              isNotHoney 
+                ? "This sample does not match honey characteristics." 
+                : "Honey color grade: $pfund",
+              style: const TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: Colors.black54),
+              textAlign: TextAlign.center,
+            ),
+            const Divider(height: 30),
+            
+            const Text("How accurate was the result?", style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            
+            // Dropdown para sa Rating
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300), 
+                borderRadius: BorderRadius.circular(8)
               ),
-              const Text("Quick Comment:"),
-              DropdownButton<String>(
-                value: selectedComment,
-                isExpanded: true,
-                items: ["Legit! Accurate result.", "Matched expectations.", "Slightly different.", "Inaccurate.", "Helpful App!"]
-                    .map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-                onChanged: (v) => setStateSB(() => selectedComment = v!),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: selectedRating,
+                  isExpanded: true,
+                  items: ["5", "4", "3", "2", "1"]
+                    .map((s) => DropdownMenuItem(value: s, child: Text("$s Stars")))
+                    .toList(),
+                  onChanged: (v) => setStateSB(() => selectedRating = v!),
+                ),
               ),
-            ],
-          ),
+            ),
+            
+            const SizedBox(height: 15),
+            const Text("Quick Comment:", style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 5),
+            
+            // Dropdown para sa Quick Comment
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300), 
+                borderRadius: BorderRadius.circular(8)
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: selectedComment,
+                  isExpanded: true,
+                  items: (isNotHoney 
+                      ? ["Correctly identified as invalid.", "Accurate detection.", "Not sure.", "Should be honey."] 
+                      : ["Legit! Accurate result.", "Matched expectations.", "Slightly different.", "Inaccurate.", "Helpful App!"])
+                    .map((s) => DropdownMenuItem<String>(
+                        value: s, 
+                        child: Text(s, style: const TextStyle(fontSize: 13))
+                      )).toList(),
+                  onChanged: (v) => setStateSB(() => selectedComment = v!),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
-      btnOkText: "SAVE SCAN",
-      btnOkColor: Colors.amber,
-      btnOkOnPress: () => _saveScanWithFeedback(label, conf, pfund, selectedRating, selectedComment, imageFile),
-    ).show();
-  }
+    ),
+    btnOkText: "SAVE SCAN",
+    btnOkColor: isNotHoney ? Colors.red : Colors.amber,
+    // Gamitin ang "label" (yung original) sa save function para match sa DB records
+    btnOkOnPress: () => _saveScanWithFeedback(
+      label, 
+      conf, 
+      pfund, 
+      selectedRating, 
+      selectedComment, 
+      imageFile
+    ),
+    btnCancelOnPress: () {},
+    btnCancelText: "DISCARD",
+  ).show();
+}
+// Ginagamit sa Scan Report modal para sa malinis na presentation ng data
+Widget _detailRow(String label, String value) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500)),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(
+            value, 
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87), 
+            textAlign: TextAlign.right
+          )
+        ),
+      ],
+    ),
+  );
+}
 
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13)),
-          Flexible(child: Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), textAlign: TextAlign.right)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStarRating(String rating) {
-    int r = int.tryParse(rating) ?? 0;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(5, (index) => Icon(index < r ? Icons.star : Icons.star_border, color: Colors.amber, size: 24)),
-    );
-  }
-
+// Visual representation ng user rating (stars) sa Admin/History panel
+Widget _buildStarRating(String rating) {
+  int r = int.tryParse(rating) ?? 0;
+  return Row(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: List.generate(5, (index) => Icon(
+      index < r ? Icons.star : Icons.star_border, 
+      color: Colors.amber, 
+      size: 24
+    )),
+  );
+}
   // ================= CLASSIFICATION =================
 
-  Future<void> _classifyHoney(File image) async {
+Future<void> _classifyHoney(File image) async {
+  setState(() => isLoading = true);
+  
+  try {
+    // Siguraduhin na ang imageMean at imageStd ay tugma sa training settings mo
     var output = await Tflite.runModelOnImage(
       path: image.path,
-      numResults: 3,
-      threshold: 0.05,
-      imageMean: 127.5,
+      numResults: 1,
+      threshold: 0.3, // Minimum confidence para pansinin ang result
+      imageMean: 127.5, 
       imageStd: 127.5,
     );
 
     if (output != null && output.isNotEmpty) {
-      String rawLabel = output[0]['label'];
-      String detectedLabel = rawLabel.replaceAll(RegExp(r'[0-9]'), '').trim();
-      double detectedConfidence = output[0]['confidence'] * 100;
-      String pfund = _getPfundValue(detectedLabel);
-
       setState(() {
-        _result = detectedLabel;
-        _confidence = detectedConfidence;
+        _recognitions = output; 
+        String rawLabel = output[0]['label']; // Halimbawa: "0 Amber" o "3 Not Honey"
+        double confidenceScore = (output[0]['confidence'] * 100);
+
+        // 1. Linisin ang label (Tinatanggal ang numero at extra spaces)
+        String cleanedLabel = rawLabel.replaceFirst(RegExp(r'^\d+\s+'), '').trim();
+
+        // 2. CHECKING LOGIC: "Real Honey" vs "Not Honey"
+        // Force "Not Honey" kung:
+        // - Ang label mismo ay "Not Honey"
+        // - O kung mababa ang confidence (hindi sigurado ang AI)
+        if (cleanedLabel.toLowerCase().contains("not") || confidenceScore < 70) {
+          _result = "Not Honey";
+          _confidence = confidenceScore;
+        } else {
+          // Dito papasok ang Amber, Extralightamber, at LightAmber
+          _result = cleanedLabel;
+          _confidence = confidenceScore;
+        }
       });
-      _showFeedbackDialog(detectedLabel, detectedConfidence, pfund, image);
-    }
-  }
 
-  Future<void> _pickImage(ImageSource source) async {
-    final pickedFile = await ImagePicker().pickImage(source: source);
-    if (pickedFile != null) {
+      // 3. Kunin ang Pfund Value base sa _result
+      String pfund = _getPfundValue(_result);
+      
+      // 4. Ipakita ang Result/Feedback Dialog
+      _showFeedbackDialog(_result, _confidence, pfund, image);
+
+    } else {
+      // Kapag walang ma-detect (sobrang dilim o labo)
       setState(() {
-        _image = File(pickedFile.path);
-        _result = "Analyzing...";
+        _result = "Not Honey";
         _confidence = 0.0;
       });
-      _classifyHoney(_image!);
+      _showFeedbackDialog("Not Honey", 0.0, "N/A", image);
     }
+  } catch (e) {
+    debugPrint("Error sa classification: $e");
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Detection failed. Please try again.")),
+    );
+  } finally {
+    setState(() => isLoading = false);
   }
+}
+// Function para sa pagkuha ng litrato (Camera o Gallery)
+Future<void> _pickImage(ImageSource source) async {
+  // 1. Ipakita muna ang Scanning Tips bago buksan ang camera/gallery
+  AwesomeDialog(
+    context: context,
+    dialogType: DialogType.info,
+    animType: AnimType.scale,
+    headerAnimationLoop: false,
+    title: 'Scanning Guide',
+    body: const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      child: Column(
+        children: [
+          Text(
+            "For best results, follow these tips:",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 10),
+          ListTile(
+            dense: true,
+            leading: Icon(Icons.wb_sunny, color: Colors.amber),
+            title: Text("Ensure bright, natural lighting."),
+          ),
+          ListTile(
+            dense: true,
+            leading: Icon(Icons.check_box_outline_blank, color: Colors.amber),
+            title: Text("Use a plain white background."),
+          ),
+          ListTile(
+            dense: true,
+            leading: Icon(Icons.center_focus_strong, color: Colors.amber),
+            title: Text("Position the honey sample at the center."),
+          ),
+        ],
+      ),
+    ),
+    btnOkText: "PROCEED",
+    btnOkColor: Colors.amber,
+    btnOkOnPress: () async {
+      // 2. Kapag pinindot ang PROCEED, dito na bubukas ang ImagePicker
+      try {
+        final pickedFile = await ImagePicker().pickImage(
+          source: source,
+          imageQuality: 90, // Optimization para sa upload speed
+        );
+
+        if (pickedFile != null) {
+          setState(() {
+            _image = File(pickedFile.path);
+            _result = "Analyzing...";
+            _confidence = 0.0;
+          });
+
+          // 3. Simulan na ang classification
+          await _classifyHoney(_image!);
+        }
+      } catch (e) {
+        debugPrint("Error picking image: $e");
+      }
+    },
+  ).show();
+}
+
+// Function para sa maayos na format ng petsa sa History
 String formatDateTime(String rawDate) {
   if (rawDate == "N/A" || rawDate.isEmpty) return "N/A";
   try {
+    // Kinokonvert ang String date galing database (MySQL format) patungong Readable format
     DateTime dateTime = DateTime.parse(rawDate);
     return DateFormat('MMMM dd, yyyy - hh:mm a').format(dateTime);
   } catch (e) {
+    // Kung sakaling may error sa parsing, ibalik ang original string
     return rawDate;
   }
 }
+
   // ================= PAGINATION & UI =================
 
   Widget _buildPaginationFooter() {
@@ -853,7 +1080,7 @@ String formatDateTime(String rawDate) {
       setState(() => isLoading = false);
       debugPrint("Error fetching admin data: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: Hindi ma-load ang data.")),
+        SnackBar(content: Text("Error: Data fetch failed. Please try again.")),
       );
     }
   }
@@ -894,6 +1121,7 @@ void _handleLogout() {
 
   // ================= UI HELPERS =================
 
+
   Widget _buildStarRating(String rating) {
     int r = int.tryParse(rating) ?? 0;
     return Row(
@@ -907,63 +1135,74 @@ void _handleLogout() {
       }),
     );
   }
+Widget _buildPieChart() {
+  int extraLight = scans.where((s) => s['color_result'].toString().toLowerCase().contains('extra')).length;
+  int light = scans.where((s) {
+    String res = s['color_result'].toString().toLowerCase();
+    return res.contains('light') && !res.contains('extra');
+  }).length;
+  int amber = scans.where((s) {
+    String res = s['color_result'].toString().toLowerCase();
+    return res.contains('amber') && !res.contains('light');
+  }).length;
+  
+  // BAGONG ADDITION: Bilangin ang Not Honey
+  int invalid = scans.where((s) => s['color_result'].toString().toLowerCase().contains('not')).length;
 
-  Widget _buildPieChart() {
-    int extraLight = scans.where((s) => s['color_result'].toString().toLowerCase().contains('extra')).length;
-    int light = scans.where((s) {
-      String res = s['color_result'].toString().toLowerCase();
-      return res.contains('light') && !res.contains('extra');
-    }).length;
-    int amber = scans.where((s) {
-      String res = s['color_result'].toString().toLowerCase();
-      return res.contains('amber') && !res.contains('light');
-    }).length;
+  int total = amber + extraLight + light + invalid;
 
-    int total = amber + extraLight + light;
-
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      margin: const EdgeInsets.all(10),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            const Text("Honey Type Distribution", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 200,
-              child: total == 0 
-                ? const Center(child: Text("No scan data available"))
-                : PieChart(
-                    PieChartData(
-                      sectionsSpace: 2,
-                      centerSpaceRadius: 40,
-                      sections: [
-                        if (amber > 0) PieChartSectionData(color: Colors.brown, value: amber.toDouble(), title: '$amber', radius: 50, titleStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                        if (extraLight > 0) PieChartSectionData(color: Colors.orange, value: extraLight.toDouble(), title: '$extraLight', radius: 50, titleStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                        if (light > 0) PieChartSectionData(color: Colors.amber, value: light.toDouble(), title: '$light', radius: 50, titleStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
+return Card(
+    margin: const EdgeInsets.all(10),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+    elevation: 4,
+    child: Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          const Text("Honey Quality Distribution", 
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 25),
+          SizedBox(
+            height: 180, // Fixed height para sa chart
+            child: total == 0 
+              ? const Center(child: Text("No scan data available"))
+              : PieChart(
+                  PieChartData(
+                    borderData: FlBorderData(show: false),
+                    sectionsSpace: 2, // Space sa pagitan ng slices
+                    centerSpaceRadius: 40, // Ginagawa itong Donut chart (mas modern tignan)
+                    sections: [
+                      if (amber > 0) PieChartSectionData(color: Colors.brown, value: amber.toDouble(), title: '${((amber/total)*100).toStringAsFixed(0)}%', radius: 50, titleStyle: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                      if (extraLight > 0) PieChartSectionData(color: Colors.orange, value: extraLight.toDouble(), title: '${((extraLight/total)*100).toStringAsFixed(0)}%', radius: 50, titleStyle: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                      if (light > 0) PieChartSectionData(color: Colors.amber, value: light.toDouble(), title: '${((light/total)*100).toStringAsFixed(0)}%', radius: 50, titleStyle: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+if (invalid > 0) PieChartSectionData(
+  color: Colors.grey, 
+  value: invalid.toDouble(), 
+  title: '${((invalid/total)*100).toStringAsFixed(0)}%', // <--- Dynamic percentage
+  radius: 50, 
+  titleStyle: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)
+),                    ],
                   ),
-            ),
-            const SizedBox(height: 15),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _legendItem("Amber", Colors.brown),
-                const SizedBox(width: 15),
-                _legendItem("Ex Light", Colors.orange),
-                const SizedBox(width: 15),
-                _legendItem("Light", Colors.amber),
-              ],
-            )
-          ],
-        ),
+                ),
+          ),
+          const SizedBox(height: 20),
+          // Legend layout using Wrap
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 20,
+            runSpacing: 10,
+            children: [
+              _legendItem("Amber", Colors.brown),
+              _legendItem("Ex Light", Colors.orange),
+              _legendItem("Light", Colors.amber),
+              _legendItem("Invalid", Colors.grey),
+            ],
+          )
+        ],
       ),
-    );
-  }
-
+    ),
+  );
+}
   Widget _legendItem(String name, Color color) {
     return Row(children: [
       Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
@@ -1073,13 +1312,17 @@ void _handleLogout() {
   }
 
   // ================= MAIN BUILD =================
-
-  @override
+@override
   Widget build(BuildContext context) {
+    // Logic para sa Pagination: Kinakalkula ang range ng items na ipapakita
     int startIndex = (currentPage - 1) * itemsPerPage;
     int endIndex = startIndex + itemsPerPage;
     if (endIndex > filteredScans.length) endIndex = filteredScans.length;
-    List currentScans = filteredScans.isEmpty ? [] : filteredScans.sublist(startIndex, endIndex);
+
+    // Ang subset ng scans na ipapakita sa kasalukuyang page
+    List currentScans = filteredScans.isEmpty || startIndex >= filteredScans.length
+        ? []
+        : filteredScans.sublist(startIndex, endIndex);
 
     return DefaultTabController(
       length: 2,
@@ -1088,97 +1331,124 @@ void _handleLogout() {
           title: const Text("Admin Monitoring"),
           backgroundColor: Colors.amber,
           bottom: const TabBar(
+            indicatorColor: Colors.black, // Opsyonal: para mas kita ang active tab
             tabs: [
-              Tab(icon: Icon(Icons.analytics), text: "Analytics"), 
+              Tab(icon: Icon(Icons.analytics), text: "Analytics"),
               Tab(icon: Icon(Icons.history), text: "History")
             ],
           ),
           actions: [
             IconButton(
-              onPressed: fetchAdminData, 
-              icon: isLoading 
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
-                : const Icon(Icons.refresh)
+              onPressed: fetchAdminData,
+              icon: isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Icon(Icons.refresh),
             ),
             IconButton(onPressed: _handleLogout, icon: const Icon(Icons.logout)),
           ],
         ),
         body: isLoading && scans.isEmpty
-        ? const Center(child: CircularProgressIndicator(color: Colors.amber))
-        : TabBarView(children: [
-            // TAB 1: ANALYTICS
-            RefreshIndicator(
-              onRefresh: fetchAdminData,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                child: Column(children: [
-                  Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: Row(children: [
-                      Expanded(child: _buildStatCard("Users", users.length.toString(), Icons.people, Colors.blue)),
-                      Expanded(child: _buildStatCard("Scans", scans.length.toString(), Icons.insert_chart, Colors.orange)),
-                      Expanded(child: _buildStatCard("Amber", scans.where((s) => s['color_result'].toString().toLowerCase().contains('amber')).length.toString(), Icons.opacity, Colors.brown)),
-                    ]),
-                  ),
-                  _buildPieChart(), 
-                  const Divider(),
-                  const Padding(padding: EdgeInsets.all(8.0), child: Text("Active Users", style: TextStyle(fontWeight: FontWeight.bold))),
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: users.length > 5 ? 5 : users.length, 
-                    itemBuilder: (context, i) => ListTile(
-                      leading: const CircleAvatar(backgroundColor: Colors.amber, child: Icon(Icons.person, color: Colors.white)),
-                      title: Text(users[i]['fullname'] ?? "Unknown"),
-                      subtitle: Text("Username: ${users[i]['username']}"),
-                    ),
-                  ),
-                ]),
-              ),
-            ),
-
-            // TAB 2: HISTORY
-            Column(children: [
-              Padding(
-                padding: const EdgeInsets.all(10),
-                child: TextField(
-                  controller: searchController,
-                  onChanged: filterScans,
-                  decoration: InputDecoration(
-                    hintText: "Search name or result...",
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    filled: true,
-                    fillColor: Colors.white
-                  ),
-                ),
-              ),
-              Expanded(
-                child: currentScans.isEmpty 
-                  ? const Center(child: Text("No records found."))
-                  : ListView.builder(
-                      itemCount: currentScans.length,
-                      itemBuilder: (context, i) => Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: Colors.amber[100],
-                            backgroundImage: (currentScans[i]['image_url'] != null && currentScans[i]['image_url'] != "")
-                              ? NetworkImage(currentScans[i]['image_url']) : null,
-                            child: (currentScans[i]['image_url'] == null || currentScans[i]['image_url'] == "")
-                              ? const Icon(Icons.history, color: Colors.orange) : null
+            ? const Center(child: CircularProgressIndicator(color: Colors.amber))
+            : TabBarView(
+                children: [
+                  // ================= TAB 1: ANALYTICS =================
+                  RefreshIndicator(
+                    onRefresh: fetchAdminData,
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(10),
+                            child: Row(
+                              children: [
+                                Expanded(child: _buildStatCard("Users", users.length.toString(), Icons.people, Colors.blue)),
+                                Expanded(child: _buildStatCard("Scans", scans.length.toString(), Icons.insert_chart, Colors.orange)),
+                                Expanded(
+                                  child: _buildStatCard(
+                                    "Amber",
+                                    scans.where((s) => s['color_result'].toString().toLowerCase().contains('amber')).length.toString(),
+                                    Icons.opacity,
+                                    Colors.brown,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          title: Text(currentScans[i]['fullname'] ?? "User"),
-                          subtitle: Text("${currentScans[i]['color_result']} - ${formatDateTime(currentScans[i]['created_at'])}"),
-                          trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-                          onTap: () => _showScanDetails(currentScans[i]),
-                        ),
+                          _buildPieChart(),
+                          const Divider(),
+                          const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: Text("Active Users", style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                          ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: users.length > 5 ? 5 : users.length,
+                            itemBuilder: (context, i) => ListTile(
+                              leading: const CircleAvatar(
+                                backgroundColor: Colors.amber,
+                                child: Icon(Icons.person, color: Colors.white),
+                              ),
+                              title: Text(users[i]['fullname'] ?? "Unknown"),
+                              subtitle: Text("Username: ${users[i]['username']}"),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                  ),
+
+                  // ================= TAB 2: HISTORY =================
+                  Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: TextField(
+                          controller: searchController,
+                          onChanged: filterScans,
+                          decoration: InputDecoration(
+                            hintText: "Search name or result...",
+                            prefixIcon: const Icon(Icons.search),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            filled: true,
+                            fillColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: currentScans.isEmpty
+                            ? const Center(child: Text("No records found."))
+                            : ListView.builder(
+                                itemCount: currentScans.length,
+                                itemBuilder: (context, i) => Card(
+                                  margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: Colors.amber[100],
+                                      backgroundImage: (currentScans[i]['image_url'] != null && currentScans[i]['image_url'] != "")
+                                          ? NetworkImage(currentScans[i]['image_url'])
+                                          : null,
+                                      child: (currentScans[i]['image_url'] == null || currentScans[i]['image_url'] == "")
+                                          ? const Icon(Icons.history, color: Colors.orange)
+                                          : null,
+                                    ),
+                                    title: Text(currentScans[i]['fullname'] ?? "User"),
+                                    subtitle: Text("${currentScans[i]['color_result']} - ${formatDateTime(currentScans[i]['created_at'] ?? "")}"),
+                                    trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                                    onTap: () => _showScanDetails(currentScans[i]),
+                                  ),
+                                ),
+                              ),
+                      ),
+                      _buildPaginationFooter(),
+                    ],
+                  ),
+                ],
               ),
-              _buildPaginationFooter(), 
-            ]),
-          ]),
       ),
     );
   }
