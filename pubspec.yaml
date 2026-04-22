@@ -15,7 +15,7 @@ dependencies:
   camera: ^0.11.3
   image: ^4.0.17
   awesome_dialog: ^3.1.0
-  # Note: Siguraduhing compatible ang version na ito sa iyong Flutter version
+  # TFLite for model inference
   tflite_v2: ^1.0.0 
   permission_handler: ^12.0.1
   fl_chart: ^0.66.0
@@ -38,8 +38,15 @@ flutter_launcher_icons:
 flutter:
   uses-material-design: true
 
-  # Siguraduhin na ang mga files na ito ay existing sa iyong project folder
+  # Siguraduhin na ang mga files na ito ay nandoon sa iyong "assets" folder
   assets:
-    - assets/honey_model_v4.tflite
+    - assets/honey_model.tflite
     - assets/labels.txt
     - assets/images/logo.png
+    - assets/images/production_process.png
+    - assets/images/honey_bee.png
+    - assets/images/purity_test.png
+    - assets/images/amber.png
+    - assets/images/extra_light.png
+    - assets/images/light_amber.png
+    - assets/images/learn_more_hero.png

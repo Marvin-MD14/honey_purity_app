@@ -1,4 +1,7 @@
 Amber
 Extralightamber
 LightAmber
+Negative Amber
+Negative Extra Light Amber
+Negative Light Amber
 Not Honey
