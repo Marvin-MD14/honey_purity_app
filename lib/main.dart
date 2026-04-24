@@ -7,7 +7,8 @@ import 'package:awesome_dialog/awesome_dialog.dart';
 import 'package:tflite_v2/tflite_v2.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
-
+import 'package:permission_handler/permission_handler.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 void main() {
   runApp(
     MaterialApp(
@@ -473,7 +474,6 @@ class UserDashboard extends StatefulWidget {
   @override
   State<UserDashboard> createState() => _UserDashboardState();
 }
-
 class _UserDashboardState extends State<UserDashboard> {
   File? _image;
   List? _recognitions;
@@ -483,7 +483,7 @@ class _UserDashboardState extends State<UserDashboard> {
   String _currentProfilePic = "";
   double _confidence = 0.0;
   bool isLoading = false;
-
+  bool _isAnalyzing = false;
   List myScans = [];
   List filteredScans = [];
   TextEditingController searchController = TextEditingController();
@@ -491,10 +491,10 @@ class _UserDashboardState extends State<UserDashboard> {
   int itemsPerPage = 10;
 
   @override
-  void initState() {
-    super.initState();
+  void initState() {    super.initState();
     _currentName = widget.name;
     _currentProfilePic = widget.profilePic;
+    _checkAndRequestPermissions();  // ← ADD THIS LINE
     loadModel();
     fetchMyHistory();
   }
@@ -506,21 +506,72 @@ class _UserDashboardState extends State<UserDashboard> {
     super.dispose();
   }
 
+  // ================= ADD THIS PERMISSION METHOD =================
+  Future<bool> _checkAndRequestPermissions() async {
+    // For Camera
+    if (await Permission.camera.isDenied) {
+      final cameraStatus = await Permission.camera.request();
+      if (!cameraStatus.isGranted) {
+        _showPermissionDeniedDialog();
+        return false;
+      }
+    }
+    
+    // For Android 13+ (Photos)
+    if (await Permission.photos.isDenied) {
+      final photosStatus = await Permission.photos.request();
+      if (!photosStatus.isGranted) {
+        _showPermissionDeniedDialog();
+        return false;
+      }
+    }
+    
+    // For older Android (Storage)
+    if (await Permission.storage.isDenied) {
+      final storageStatus = await Permission.storage.request();
+      if (!storageStatus.isGranted) {
+        _showPermissionDeniedDialog();
+        return false;
+      }
+    }
+    
+    return true;
+  }
+
+  void _showPermissionDeniedDialog() {
+    AwesomeDialog(
+      context: context,
+      dialogType: DialogType.warning,
+      title: 'Permissions Required',
+      desc: 'Camera and storage permissions are needed to scan honey images.',
+      btnOkOnPress: () => openAppSettings(),
+      btnOkText: 'Open Settings',
+      btnCancelOnPress: () {},
+      btnCancelText: 'Cancel',
+    ).show();
+  }
+
   // ================= CORE FUNCTIONS =================
 
   // Sa loob ng iyong classification service o state class
-  Future loadModel() async {
-    String? res = await Tflite.loadModel(
+Future loadModel() async {
+  try {
+    var result = await Tflite.loadModel(
       model: "assets/honey_model.tflite",
       labels: "assets/labels.txt",
-      numThreads: 1, // mas stable sa mobile
-      isAsset: true,
-      useGpuDelegate:
-          false, // set to false muna para iwas crash sa ibang android
+      numThreads: 1,        // ← BINAGO: mula 2 → 1
+      useGpuDelegate: false,
+      isAsset: true,        // ← IDINAGDAG: explicit asset flag
     );
-    print("Model loaded: $res");
+    if (result == null) {
+      debugPrint("❌ MODEL LOAD FAILED");
+    } else {
+      debugPrint("✅ Model loaded: $result");
+    }
+  } catch (e) {
+    debugPrint("❌ MODEL LOAD ERROR: $e");
   }
-
+}
   Future<void> fetchMyHistory() async {
     if (!mounted) return;
     setState(() => isLoading = true);
@@ -633,8 +684,7 @@ class _UserDashboardState extends State<UserDashboard> {
       if (mounted) setState(() => isLoading = false);
     }
   }
-
-  Future<void> _saveScanWithFeedback(
+Future<void> _saveScanWithFeedback(
     String res,
     double conf,
     String pfund,
@@ -642,77 +692,58 @@ class _UserDashboardState extends State<UserDashboard> {
     String comm,
     File img,
   ) async {
-    setState(() => isLoading = true);
-
-    // OPTIONAL: Gawing readable ang label bago i-save
-    String formattedRes = res;
-    if (res == 'Extralightamber') formattedRes = 'Extra Light Amber';
-    if (res == 'LightAmber') formattedRes = 'Light Amber';
+    if (!mounted) return;
+    setState(() => isLoading = true); 
 
     try {
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse("$apiUrl?action=save_scan_feedback"),
+        Uri.parse("$apiUrl?action=save_scan_feedback"), 
       );
-
+      
       request.fields['user_id'] = widget.userId;
-      request.fields['color_result'] =
-          formattedRes; // Ginamit ang formatted label
-      request.fields['confidence'] =
-          "${conf.clamp(0.0, 100.0).toStringAsFixed(1)}%";
+      request.fields['color_result'] = res;
+      request.fields['confidence'] = "${conf.toStringAsFixed(1)}%";
       request.fields['pfund_value'] = pfund;
       request.fields['rating'] = rate;
       request.fields['comment'] = comm;
-
-      // Pag-attach ng image
-      request.files.add(await http.MultipartFile.fromPath('image', img.path));
+      request.files.add(await http.MultipartFile.fromPath('image', img.path)); 
 
       var response = await request.send();
 
       if (response.statusCode == 200) {
-        // Kunin ang response body kung kailangan i-debug
-        // var responseData = await response.stream.bytesToString();
-
-        await fetchMyHistory(); // Refresh history list
-
+        await fetchMyHistory(); 
         if (!mounted) return;
 
+        // SUCCESS DIALOG
         AwesomeDialog(
           context: context,
           dialogType: DialogType.success,
+          headerAnimationLoop: false,
           title: 'Analysis Saved!',
-          desc: 'Thank you for your feedback.',
-          btnOkOnPress: () {},
+          desc: 'Successfully saved your scan and feedback. Check your history for details.',
+          btnOkOnPress: () {
+             // Empty ito para manatili sa Dashboard at hindi mag-crash pabalik sa home
+          },
         ).show();
-      } else {
-        throw Exception("Server Error: ${response.statusCode}");
       }
     } catch (e) {
-      debugPrint("Error saving scan: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Failed to save. Please check your internet."),
-          ),
-        );
-      }
+      debugPrint("Error saving scan: $e"); 
     } finally {
-      if (mounted) setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false); 
     }
   }
-
   // ================= LOGIC & UI HELPERS =================
 
-  String _getPfundValue(String result) {
-  // Ginagamit natin ang .toLowerCase() at .contains() para mas madaling mahuli ang "Negative"
-  if (result.toLowerCase().contains('negative')) {
+ String _getPfundValue(String result) {
+  if (result.toLowerCase().contains('negative') || 
+      result.toLowerCase().contains('not honey')) {
     return 'N/A (Adulterated/Fake)';
   }
-
   switch (result) {
-    case 'Extralightamber': 
+    case 'Extralightamber':
       return '17mm - 34mm';
-    case 'LightAmber': 
+    case 'LightAmber':
       return '51mm - 85mm';
     case 'Amber':
       return '86mm - 114mm';
@@ -848,202 +879,203 @@ class _UserDashboardState extends State<UserDashboard> {
  // 1. HELPER FUNCTION PARA SA DESCRIPTION
   // Ipinapakita ang maikling detalye base sa naging resulta ng scan
   String _getHoneyDescription(String label) {
-    String lowerLabel = label.toLowerCase();
-    if (lowerLabel.contains('negative')) {
-      return "This sample shows abnormal characteristics. It may contain excessive sugar syrup, additives, or is not pure honey.";
-    }
-    if (lowerLabel.contains('extra light')) {
-      return "Very mild in flavor and light in color. Common in early spring flowers, highly prized for its delicate sweetness.";
-    }
-    if (lowerLabel.contains('light amber')) {
-      return "The most popular honey grade. It has a characteristic mild floral taste, perfect for everyday use and table honey.";
-    }
-    if (lowerLabel.contains('amber')) {
-      return "Rich and full-bodied flavor. Darker honey usually contains more antioxidants and minerals than lighter varieties.";
-    }
-    return "Analyzing sample characteristics based on color intensity and light transmittance.";
+  String lowerLabel = label.toLowerCase();
+  if (lowerLabel.contains('not honey')) {
+    return "This sample does not appear to be honey at all. It may be a completely different liquid or substance.";
   }
+  if (lowerLabel.contains('negative')) {
+    return "This sample shows abnormal characteristics. It may contain excessive sugar syrup, additives, or is not pure honey.";
+  }
+  if (lowerLabel.contains('extralightamber') || lowerLabel.contains('extra light')) {
+    return "Very mild in flavor and light in color. Common in early spring flowers, highly prized for its delicate sweetness.";
+  }
+  if (lowerLabel.contains('lightamber') || lowerLabel.contains('light amber')) {
+    return "The most popular honey grade. It has a characteristic mild floral taste, perfect for everyday use and table honey.";
+  }
+  if (lowerLabel.contains('amber')) {
+    return "Rich and full-bodied flavor. Darker honey usually contains more antioxidants and minerals than lighter varieties.";
+  }
+  return "Analyzing sample characteristics based on color intensity and light transmittance.";
+}
 
   // 2. MAIN DIALOG FUNCTION
   // Ito ang lalabas pagkatapos ng scanning process
   void _showFeedbackDialog(
-    String label,
-    double conf,
-    String pfund,
-    File imageFile,
-  ) {
-    String displayLabel = label;
-    
-    // Mapping para sa readable version ng labels sa UI
-    if (label == 'Extralightamber') displayLabel = 'Extra Light Amber';
-    else if (label == 'LightAmber') displayLabel = 'Light Amber';
-    else if (label == 'Amber') displayLabel = 'Amber';
-    else if (label.toLowerCase().contains('negative amber')) displayLabel = 'Fake: Amber Style';
-    else if (label.toLowerCase().contains('negative extra light')) displayLabel = 'Fake: Extra Light Style';
-    else if (label.toLowerCase().contains('negative light')) displayLabel = 'Fake: Light Amber Style';
+  String label,
+  double conf,
+  String pfund,
+  File imageFile,
+) {
+  String displayLabel = label;
 
-    // Check kung ang sample ay Fake (Negative) o legit honey
-    bool isNotHoney = label.toLowerCase().contains("not") || 
-                      label.toLowerCase().contains("negative");
+  // ← UPDATED: Tugma na sa 5 labels ng model
+  if (label == 'Extralightamber') displayLabel = 'Extra Light Amber';
+  else if (label == 'LightAmber') displayLabel = 'Light Amber';
+  else if (label == 'Amber') displayLabel = 'Amber';
+  else if (label == 'Negative') displayLabel = 'Fake / Adulterated Honey';
+  else if (label == 'Not Honey') displayLabel = 'Not Honey';
 
-    String selectedRating = "5";
-    
-    // Default comment depende sa result
-    String selectedComment = isNotHoney
-        ? "Correctly identified as invalid."
-        : "Legit! Accurate result.";
+  // ← UPDATED: Exact match na lang, hindi na .contains()
+  bool isNotHoney = label == 'Negative' || label == 'Not Honey';
 
-    String honeyDesc = _getHoneyDescription(label);
+  String selectedRating = "5";
 
-    AwesomeDialog(
-      context: context,
-      // Pula ang icon pag Fake, Gold/Amber pag Legit
-      dialogType: isNotHoney ? DialogType.warning : DialogType.info,
-      animType: AnimType.scale,
-      headerAnimationLoop: false, 
-      title: 'Scan Result',
-      body: StatefulBuilder(
-        builder: (context, setStateSB) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Column(
-            children: [
-              Text(
-                displayLabel, 
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 22,
-                  color: isNotHoney ? Colors.red.shade900 : Colors.amber.shade700,
+  String selectedComment = isNotHoney
+      ? "Correctly identified as invalid."
+      : "Legit! Accurate result.";
+
+  String honeyDesc = _getHoneyDescription(label);
+
+  AwesomeDialog(
+    context: context,
+    dialogType: isNotHoney ? DialogType.warning : DialogType.info,
+    animType: AnimType.scale,
+    headerAnimationLoop: false,
+    title: 'Scan Result',
+    body: StatefulBuilder(
+      builder: (context, setStateSB) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: Column(
+          children: [
+            Text(
+              displayLabel,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 22,
+                color: isNotHoney ? Colors.red.shade900 : Colors.amber.shade700,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              "Confidence: ${conf.clamp(0.0, 100.0).toStringAsFixed(1)}%",
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 15),
+
+            // --- DESCRIPTION BOX ---
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isNotHoney ? Colors.red.shade50 : Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isNotHoney ? Colors.red.shade200 : Colors.amber.shade200,
                 ),
               ),
-              const SizedBox(height: 5),
-              Text(
-                "Confidence: ${conf.clamp(0.0, 100.0).toStringAsFixed(1)}%",
-                style: const TextStyle(fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 15),
-
-              // --- DESCRIPTION BOX ---
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: isNotHoney ? Colors.red.shade50 : Colors.amber.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: isNotHoney ? Colors.red.shade200 : Colors.amber.shade200),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      isNotHoney ? "PRODUCT ALERT" : "GRADE DESCRIPTION",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        color: isNotHoney ? Colors.red.shade800 : Colors.amber.shade900,
-                      ),
+              child: Column(
+                children: [
+                  Text(
+                    isNotHoney ? "PRODUCT ALERT" : "GRADE DESCRIPTION",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: isNotHoney ? Colors.red.shade800 : Colors.amber.shade900,
                     ),
-                    const SizedBox(height: 5),
-                    Text(
-                      honeyDesc,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 13, height: 1.4),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 15),
-
-              Text(
-                isNotHoney
-                    ? "Sample does not match pure honey standards."
-                    : "Pfund Value: $pfund",
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-              ),
-              const Divider(height: 30),
-
-              const Text(
-                "How accurate was the result?",
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10),
-
-              // Dropdown para sa Rating (Accuracy)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: selectedRating,
-                    isExpanded: true,
-                    items: ["5", "4", "3", "2", "1"]
-                        .map((s) => DropdownMenuItem(value: s, child: Text("$s Stars")))
-                        .toList(),
-                    onChanged: (v) => setStateSB(() => selectedRating = v!),
                   ),
-                ),
-              ),
-
-              const SizedBox(height: 15),
-              const Text(
-                "Quick Comment:",
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 5),
-
-              // Dropdown para sa Quick Comment (Feedback)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: selectedComment,
-                    isExpanded: true,
-                    items: (isNotHoney
-                            ? [
-                                "Correctly identified as invalid.",
-                                "Accurate detection.",
-                                "Not sure.",
-                                "Should be honey.",
-                              ]
-                            : [
-                                "Legit! Accurate result.",
-                                "Matched expectations.",
-                                "Slightly different.",
-                                "Inaccurate.",
-                                "Helpful App!",
-                              ])
-                        .map((s) => DropdownMenuItem<String>(
-                              value: s,
-                              child: Text(s, style: const TextStyle(fontSize: 13)),
-                            ))
-                        .toList(),
-                    onChanged: (v) => setStateSB(() => selectedComment = v!),
+                  const SizedBox(height: 5),
+                  Text(
+                    honeyDesc,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 13, height: 1.4),
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 15),
+
+            Text(
+              isNotHoney
+                  ? "Sample does not match pure honey standards."
+                  : "Pfund Value: $pfund",
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+            const Divider(height: 30),
+
+            const Text(
+              "How accurate was the result?",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+
+            // Dropdown para sa Rating (Accuracy)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: selectedRating,
+                  isExpanded: true,
+                  items: ["5", "4", "3", "2", "1"]
+                      .map((s) => DropdownMenuItem(value: s, child: Text("$s Stars")))
+                      .toList(),
+                  onChanged: (v) => setStateSB(() => selectedRating = v!),
                 ),
               ),
-            ],
-          ),
+            ),
+
+            const SizedBox(height: 15),
+            const Text(
+              "Quick Comment:",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 5),
+
+            // Dropdown para sa Quick Comment (Feedback)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: selectedComment,
+                  isExpanded: true,
+                  items: (isNotHoney
+                          ? [
+                              "Correctly identified as invalid.",
+                              "Accurate detection.",
+                              "Not sure.",
+                              "Should be honey.",
+                            ]
+                          : [
+                              "Legit! Accurate result.",
+                              "Matched expectations.",
+                              "Slightly different.",
+                              "Inaccurate.",
+                              "Helpful App!",
+                            ])
+                      .map((s) => DropdownMenuItem<String>(
+                            value: s,
+                            child: Text(s, style: const TextStyle(fontSize: 13)),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setStateSB(() => selectedComment = v!),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
-      btnOkText: "SAVE SCAN",
-      btnOkColor: isNotHoney ? Colors.red : Colors.amber,
-      btnOkOnPress: () => _saveScanWithFeedback(
-        label,
-        conf,
-        pfund,
-        selectedRating,
-        selectedComment,
-        imageFile,
-      ),
-      btnCancelOnPress: () {},
-      btnCancelText: "DISCARD",
-    ).show();
-  }
+    ),
+    btnOkText: "SAVE SCAN",
+    btnOkColor: isNotHoney ? Colors.red : Colors.amber,
+    btnOkOnPress: () => _saveScanWithFeedback(
+      label,
+      conf,
+      pfund,
+      selectedRating,
+      selectedComment,
+      imageFile,
+    ),
+    btnCancelOnPress: () {},
+    btnCancelText: "DISCARD",
+  ).show();
+}
   // Ginagamit sa Scan Report modal para sa malinis na presentation ng data
   Widget _detailRow(String label, String value) {
     return Padding(
@@ -1093,108 +1125,131 @@ class _UserDashboardState extends State<UserDashboard> {
     );
   }
   // ================= CLASSIFICATION =================
-
+// Siguraduhin na ang variable na ito ay nadeklara sa taas ng class mo:
+  // double _confidence = 0.0; 
   Future<void> _classifyHoney(File image) async {
-    setState(() => isLoading = true);
+    if (!mounted) return;
+
+    await WakelockPlus.enable();
+
+    setState(() {
+      _isAnalyzing = true;
+      _result = "Analyzing...";
+    });
 
     try {
-      // Siguraduhin na ang imageMean at imageStd ay tugma sa training settings mo
+      if (!await image.exists()) throw Exception("Image file not found");
+
       var output = await Tflite.runModelOnImage(
         path: image.path,
-        numResults: 1,
-        threshold: 0.3, // Minimum confidence para pansinin ang result
+        numResults: 5,
+        threshold: 0.2,
         imageMean: 127.5,
         imageStd: 127.5,
+        asynch: true,
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => null,
       );
+
+      if (!mounted) return;
 
       if (output != null && output.isNotEmpty) {
+        var topResult = output[0];
+        String rawLabel = topResult['label'] ?? "Unknown";
+        
+        double conf = (topResult['confidence'] ?? 0.0) * 100;
+        String cleanLabel = rawLabel.replaceAll(RegExp(r'^\d+\s*'), '').trim();
+
         setState(() {
-          _recognitions = output;
-          String rawLabel =
-              output[0]['label']; // Halimbawa: "0 Amber" o "3 Not Honey"
-          double confidenceScore = (output[0]['confidence'] * 100);
-
-          // 1. Linisin ang label (Tinatanggal ang numero at extra spaces)
-          String cleanedLabel = rawLabel
-              .replaceFirst(RegExp(r'^\d+\s+'), '')
-              .trim();
-
-          // 2. CHECKING LOGIC: "Real Honey" vs "Not Honey"
-          // Force "Not Honey" kung:
-          // - Ang label mismo ay "Not Honey"
-          // - O kung mababa ang confidence (hindi sigurado ang AI)
-          if (cleanedLabel.toLowerCase().contains("not") ||
-              confidenceScore < 70) {
-            _result = "Not Honey";
-            _confidence = confidenceScore;
-          } else {
-            // Dito papasok ang Amber, Extralightamber, at LightAmber
-            _result = cleanedLabel;
-            _confidence = confidenceScore;
-          }
+          _result = cleanLabel; 
+          _confidence = conf;
+          _isAnalyzing = false;
         });
 
-        // 3. Kunin ang Pfund Value base sa _result
-        String pfund = _getPfundValue(_result);
+        debugPrint("✅ Result: $_result (${_confidence.toStringAsFixed(1)}%)");
 
-        // 4. Ipakita ang Result/Feedback Dialog
-        _showFeedbackDialog(_result, _confidence, pfund, image);
+        await Future.delayed(const Duration(milliseconds: 800));
+        
+        if (mounted) {
+          String pfundValue = _getPfundValue(_result);
+          _showFeedbackDialog(_result, _confidence, pfundValue, image);
+        }
       } else {
-        // Kapag walang ma-detect (sobrang dilim o labo)
         setState(() {
-          _result = "Not Honey";
+          _result = "Negative";
           _confidence = 0.0;
+          _isAnalyzing = false;
         });
-        _showFeedbackDialog("Not Honey", 0.0, "N/A", image);
+        if (mounted) {
+          _showFeedbackDialog("Negative", 0.0, "N/A", image);
+        }
       }
     } catch (e) {
-      debugPrint("Error sa classification: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Detection failed. Please try again.")),
-      );
+      debugPrint("❌ TFLITE ERROR: $e");
+      if (mounted) {
+        setState(() {
+          _result = "Analysis Error";
+          _isAnalyzing = false;
+        });
+      }
     } finally {
-      setState(() => isLoading = false);
+      await WakelockPlus.disable(); 
+      if (mounted) setState(() => _isAnalyzing = false);
     }
   }
 
-  // Function para sa pagkuha ng litrato (Camera o Gallery)
-  // Function para sa pagkuha ng litrato (Camera o Gallery) - No Modal Version
   Future<void> _pickImage(ImageSource source) async {
+    // Don't allow picking while analyzing
+    if (_isAnalyzing) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please wait, analysis in progress...")),
+      );
+      return;
+    }
+    
     try {
-      // Direkta na nating tatawagin ang ImagePicker nang walang AwesomeDialog
       final pickedFile = await ImagePicker().pickImage(
         source: source,
-        imageQuality: 90,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 85,
       );
-
+      
       if (pickedFile != null) {
+        final image = File(pickedFile.path);
+        
+        if (!mounted) return;
+        
         setState(() {
-          _image = File(pickedFile.path);
+          _image = image;
           _result = "Analyzing...";
-          _confidence = 0.0;
+          _confidence = 0;
         });
-
-        // Simulan ang classification
-        await _classifyHoney(_image!);
+        
+        await Future.delayed(const Duration(milliseconds: 100));
+        
+        await _classifyHoney(image);
       }
     } catch (e) {
-      debugPrint("Error picking image: $e");
+      debugPrint("❌ IMAGE PICKER ERROR: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Failed to pick image. Please try again.")),
+        );
+      }
     }
   }
 
-  // Function para sa maayos na format ng petsa sa History
   String formatDateTime(String rawDate) {
     if (rawDate == "N/A" || rawDate.isEmpty) return "N/A";
     try {
-      // Kinokonvert ang String date galing database (MySQL format) patungong Readable format
       DateTime dateTime = DateTime.parse(rawDate);
       return DateFormat('MMMM dd, yyyy - hh:mm a').format(dateTime);
     } catch (e) {
-      // Kung sakaling may error sa parsing, ibalik ang original string
       return rawDate;
     }
   }
-
   // ================= PAGINATION & UI =================
 
   Widget _buildPaginationFooter() {
@@ -1398,8 +1453,7 @@ class _UserDashboardState extends State<UserDashboard> {
                             const SizedBox(width: 10),
                             Expanded(
                               child: ElevatedButton.icon(
-                                onPressed: () =>
-                                    _pickImage(ImageSource.gallery),
+                                onPressed: () => _pickImage(ImageSource.gallery),
                                 icon: const Icon(Icons.upload_file),
                                 label: const Text("GALLERY"),
                                 style: ElevatedButton.styleFrom(
